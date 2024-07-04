@@ -5,6 +5,9 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
+
+extern struct sysinfo mninfo;
 
 uint64
 sys_exit(void)
@@ -90,4 +93,28 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_trace(void)
+{
+  struct proc* p = myproc();
+  argint(0, &(p->mask));
+  //printf("%d, \n", p->mask);
+  return 0;
+}
+
+uint64
+sys_sysinfo(void)
+{
+  struct proc *p = myproc();
+  update_nproc();
+  //此时在内核态，无法直接使用户态的内存地址覆写为内核里的内存数据
+  //现在用的pagetable是内核的
+  uint64 addr;
+  argaddr(0, &addr);
+  if (copyout(p->pagetable, addr, (char *)&mninfo, sizeof(struct sysinfo))) {
+      return -1;
+  }
+  return 0;
 }

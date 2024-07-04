@@ -9,6 +9,9 @@
 #include "riscv.h"
 #include "defs.h"
 
+#include "sysinfo.h"
+extern struct sysinfo mninfo;
+
 void freerange(void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
@@ -59,6 +62,7 @@ kfree(void *pa)
   acquire(&kmem.lock);
   r->next = kmem.freelist;
   kmem.freelist = r;
+  mninfo.freemem += PGSIZE;
   release(&kmem.lock);
 }
 
@@ -78,5 +82,10 @@ kalloc(void)
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
+  if(r) {
+    acquire(&kmem.lock);
+    mninfo.freemem -= PGSIZE;
+    release(&kmem.lock);
+  }
   return (void*)r;
 }
