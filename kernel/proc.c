@@ -5,12 +5,18 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "sysinfo.h"
 
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
 
 struct proc *initproc;
+
+struct sysinfo mninfo = {
+    .freemem = 0,
+    .nproc = 0,
+};
 
 int nextpid = 1;
 struct spinlock pid_lock;
@@ -287,6 +293,9 @@ fork(void)
   if((np = allocproc()) == 0){
     return -1;
   }
+
+  //Copy the mask for trace
+  np->mask = p->mask;
 
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
@@ -685,4 +694,17 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+void
+update_nproc(void)
+{
+  struct proc *p;
+  int tmp = 0;
+  for(p = proc; p < &proc[NPROC]; p++) {
+      if (p->state != UNUSED) {
+          ++ tmp;
+      }
+  }
+  mninfo.nproc = tmp;
 }
