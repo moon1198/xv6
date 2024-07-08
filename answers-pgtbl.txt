@@ -1,0 +1,3 @@
+any attribute that don't been modified after the proc been creat;
+for example , the parent pid;
+
