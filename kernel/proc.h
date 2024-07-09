@@ -95,6 +95,14 @@ struct proc {
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
 
+  //for alarm 
+  int interval;
+  void(*almHandler)();
+  int left_ticks;
+  uint alm_no;
+  struct trapframe *almframe; // data page for trampoline.S
+
+
   // these are private to the process, so p->lock need not be held.
   uint64 kstack;               // Virtual address of kernel stack
   uint64 sz;                   // Size of process memory (bytes)
