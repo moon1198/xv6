@@ -17,6 +17,7 @@ simpletest()
 
   printf("simple: ");
   
+  printf("pid = %d\n", getpid());
   char *p = sbrk(sz);
   if(p == (char*)0xffffffffffffffffL){
     printf("sbrk(%d) failed\n", sz);
@@ -34,14 +35,18 @@ simpletest()
   }
 
   if(pid == 0)
+printf("3\n");
+  printf("pid = %d\n", getpid());
     exit(0);
 
   wait(0);
 
+printf("1\n");
   if(sbrk(-sz) == (char*)0xffffffffffffffffL){
     printf("sbrk(-%d) failed\n", sz);
     exit(-1);
   }
+printf("2\n");
 
   printf("ok\n");
 }

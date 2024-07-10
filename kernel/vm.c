@@ -6,6 +6,7 @@
 #include "defs.h"
 #include "fs.h"
 
+extern int pgCnt[];
 /*
  * the kernel's page table.
  */
@@ -163,6 +164,8 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     if(*pte & PTE_V)
       panic("mappages: remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
+    pgCnt[PGIDX(pa)] ++;
+
     if(a == last)
       break;
     a += PGSIZE;
@@ -190,6 +193,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not mapped");
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
+    pgCnt[PGIDX(PTE2PA(*pte))] --;
     if(do_free){
       uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);
@@ -331,6 +335,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       kfree(mem);
       goto err;
     }
+    //if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
+    //  goto err;
+    //}
   }
   return 0;
 
