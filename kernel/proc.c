@@ -348,8 +348,11 @@ exit(int status)
 {
   struct proc *p = myproc();
 
-  if(p == initproc)
+  if(p == initproc){
+      printf("pid = %d\n", p->pid);
     panic("init exiting");
+  }
+      //printf("pid = %d is exiting\n", p->pid);
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
