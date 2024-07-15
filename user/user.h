@@ -1,4 +1,5 @@
 struct stat;
+struct context;
 
 // system calls
 int fork(void);
