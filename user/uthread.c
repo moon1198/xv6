@@ -1,6 +1,5 @@
 #include "kernel/types.h"
 #include "kernel/stat.h"
-#include "kernel/proc.h"
 #include "user/user.h"
 
 /* Possible states of a thread: */
@@ -78,7 +77,7 @@ thread_create(void (*func)())
   t->state = RUNNABLE;
   // YOUR CODE HERE
   t->context.ra = (uint64)func;
-  t->context.sp = (uint64)t->stack;
+  t->context.sp = (uint64)t->stack + STACK_SIZE;
 
 }
 
