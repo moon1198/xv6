@@ -150,8 +150,8 @@ e1000_recv(void)
   while (desc->status & E1000_TXD_STAT_DD) {
     acquire(&e1000_lock);
     struct mbuf *m = rx_mbufs[idx];
-    mbufput(m, desc->length);
-    //desc->length = m->len;
+    //mbufput(m, desc->length);
+    m->len = desc->length;
 
     rx_mbufs[idx] = mbufalloc(0);
     if (!rx_mbufs[idx])
@@ -169,12 +169,12 @@ e1000_recv(void)
     desc = &rx_ring[idx];
   }
 
-  //acquire(&e1000_lock);
-  //regs[E1000_RDT] = RX_RING_SIZE - 1;
-  //__sync_synchronize();
-  //
-  //release(&e1000_lock);
-  //printf("exit recv\n");
+  acquire(&e1000_lock);
+  regs[E1000_RDH] = 0;
+  regs[E1000_RDT] = RX_RING_SIZE - 1;
+  __sync_synchronize();
+  
+  release(&e1000_lock);
 }
 
 //static void
