@@ -40,7 +40,9 @@ main()
     exit(-1);
   }
   for(i = 0; i < blocks; i++){
+      //printf("%d, ", i);
     int cc = read(fd, buf, sizeof(buf));
+    //printf("after read\n");
     if(cc <= 0){
       printf("bigfile: read error at block %d\n", i);
       exit(-1);
