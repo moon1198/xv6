@@ -37,6 +37,15 @@ void
 _v1(char *p)
 {
   int i;
+  //for (i = PGSIZE + (PGSIZE/2); i < PGSIZE*2; i++) {
+  //    if (p[i] == 0) {
+  //        printf("0");
+  //    } else 
+  //    printf("%c", p[i]);
+  //}
+  //printf("%d", i);
+  //printf("\n");
+
   for (i = 0; i < PGSIZE*2; i++) {
     if (i < PGSIZE + (PGSIZE/2)) {
       if (p[i] != 'A') {
@@ -91,9 +100,21 @@ mmap_test(void)
   // file.
   //
   makefile(f);
-  if ((fd = open(f, O_RDONLY)) == -1)
+  if ((fd = open(f, O_RDONLY)) == -1) {
     err("open (1)");
+  }
 
+    //char ch;
+    //for (int i = 0; i < 8192; ++ i) {
+    //    read(fd, &ch, 1);
+    //    if (ch == 0) {
+    //        printf("0");
+    //    } else 
+    //    printf("%c", ch);
+    //}
+    //printf("\n");
+    //printf("\n");
+    //printf("\n");
   printf("test mmap f\n");
   //
   // this call to mmap() asks the kernel to map the content
@@ -151,8 +172,8 @@ mmap_test(void)
 
   printf("test mmap read/write\n");
 
-  // check that mmap does allow read/write mapping of a
-  // file opened read/write.
+   //check that mmap does allow read/write mapping of a
+   //file opened read/write.
   if ((fd = open(f, O_RDWR)) == -1)
     err("open (3)");
   p = mmap(0, PGSIZE*3, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
@@ -231,15 +252,24 @@ mmap_test(void)
   if (unlink("mmap2") == -1)
     err("unlink (2)");
 
-  if(memcmp(p1, "12345", 5) != 0)
+  if(memcmp(p1, "12345", 5) != 0) {
     err("mmap1 mismatch");
+  }
+
   if(memcmp(p2, "67890", 5) != 0)
     err("mmap2 mismatch");
 
-  if (munmap(p1, PGSIZE) == -1)
+
+  printf("before munmap 1\n");
+  if (munmap(p1, PGSIZE) == -1){
     err("munmap (5)");
-  if(memcmp(p2, "67890", 5) != 0)
+  }
+  printf("after munmap 1\n");
+
+  if(memcmp(p2, "67890", 5) != 0) {
     err("mmap2 mismatch (2)");
+  }
+  printf("before munmap 2\n");
   if (munmap(p2, PGSIZE) == -1)
     err("munmap (6)");
 
@@ -285,6 +315,7 @@ fork_test(void)
     _v1(p1);
     if (munmap(p1, PGSIZE) == -1) // just the first page
       err("munmap (7)");
+
     exit(0); // tell the parent that the mapping looks OK.
   }
 
