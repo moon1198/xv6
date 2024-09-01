@@ -1,3 +1,4 @@
+struct vma;
 // Saved registers for kernel context switches.
 struct context {
   uint64 ra;
@@ -84,6 +85,7 @@ enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 // Per-process state
 struct proc {
   struct spinlock lock;
+  struct spinlock pvma_lock;
 
   // p->lock must be held when using these:
   enum procstate state;        // Process state
@@ -94,6 +96,8 @@ struct proc {
 
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
+
+  struct vma *vma_head;
 
   // these are private to the process, so p->lock need not be held.
   uint64 kstack;               // Virtual address of kernel stack

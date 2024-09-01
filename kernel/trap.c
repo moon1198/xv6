@@ -65,8 +65,11 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if((r_scause() == 0xd) && (handle_vma(r_stval()) >= 0)){
+
   } else if((which_dev = devintr()) != 0){
     // ok
+
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

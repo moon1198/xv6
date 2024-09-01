@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "vma.h"
 
 struct cpu cpus[NCPU];
 
@@ -14,6 +15,9 @@ struct proc *initproc;
 
 int nextpid = 1;
 struct spinlock pid_lock;
+
+extern struct spinlock vma_lock;
+extern struct vma vmas[];
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
@@ -145,6 +149,8 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+  initlock(&p->pvma_lock, "proc_vma");
+  p->vma_head = 0;
 
   return p;
 }
@@ -288,6 +294,40 @@ fork(void)
     return -1;
   }
 
+  //copy vma
+  np->vma_head = 0;
+  struct vma *v = p->vma_head;
+  struct vma *prev = 0;
+  
+  while (v) {
+      struct vma *nv = 0;
+      acquire(&vma_lock);
+      for (nv = vmas; nv < vmas + NVMA; ++ nv) {
+          if (nv->free) {
+              nv->free = 0;
+              break;
+          }
+      }
+      release(&vma_lock);
+
+      nv->bg = v->bg;
+      nv->length = v->length;
+      nv->prot = v->prot;
+      nv->flags = v->flags;
+      nv->file = v->file;
+      filedup(nv->file);
+      nv->off = v->off;
+      nv->next = 0;
+      if (prev == 0) {
+          np->vma_head = nv;
+      } else {
+          prev->next = nv;
+      }
+      prev = nv;
+
+      v = v->next;
+  }
+
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
@@ -295,6 +335,15 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+
+  //struct vma* cur = np->vma_head;
+  //while (cur) {
+  //    uvmunmap(np->pagetable, cur->bg, PGROUNDUP(cur->length) % PGSIZE, 0);
+  //    cur = cur->next;
+  //}
+
+
+
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
@@ -350,6 +399,25 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
+
+  //munmap all mmap vma
+  struct vma* v = p->vma_head;
+  struct vma* nv = 0;
+  while (v) {
+      write_back(v, v->bg, v->length);
+      for (uint64 va = v->bg; va < v->bg + PGROUNDUP(v->length); va += PGSIZE) {
+          if (walkaddr(p->pagetable, va)) {
+            uvmunmap(p->pagetable, va, 1, 1);
+          }
+      }
+      fileclose(v->file);
+      nv = v->next;
+      acquire(&vma_lock);
+      v->free = 1;
+      release(&vma_lock);
+      v = nv;
+  }
+  
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){

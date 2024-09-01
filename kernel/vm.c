@@ -6,10 +6,21 @@
 #include "defs.h"
 #include "fs.h"
 
+
+#include "fcntl.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "vma.h"
+#include "proc.h"
+
 /*
  * the kernel's page table.
  */
 pagetable_t kernel_pagetable;
+
+extern struct spinlock vma_lock;
+extern struct vma vmas[];
 
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
@@ -54,6 +65,11 @@ void
 kvminit(void)
 {
   kernel_pagetable = kvmmake();
+  initlock(&vma_lock, "vma_lock");
+  struct vma *cur;
+  for (cur = vmas; cur < vmas + NVMA; ++ cur) {
+      cur->free = 1;
+  }
 }
 
 // Switch h/w page table register to the kernel's page table,
@@ -186,8 +202,10 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
       panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
+    if((*pte & PTE_V) == 0) {
+        //printf("addr = %p, npages = %d, a = %p.\n", va, npages, a);
       panic("uvmunmap: not mapped");
+    }
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -448,4 +466,58 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int handle_vma(uint64 addr) {
+    struct proc *p = myproc();
+    struct vma *cur = p->vma_head;
+    struct vma *tar = 0;
+    while (cur) {
+        if (addr >= cur->bg && addr < cur->bg + cur->length) {
+            tar = cur;
+            break;
+        }
+        cur = cur->next;
+    }
+    if (!tar) {
+        return -1;
+    }
+    uint64 va = PGROUNDDOWN(addr);
+    uint64 pa = (uint64) kalloc();
+    if(pa == 0){
+      printf("kalloc for vma, failure\n");
+      return -1;
+    }
+    memset((void *)pa, 0, PGSIZE);
+
+    //read one page from file
+    struct file *f = tar->file;
+    ilock(f->ip);
+    //若copy到va，需要va的写权限，由于未知权限，所以直接写道pa
+
+    //此处tar->off需要更新；
+    //printf("va = %p, tar->off = %p, tar->bg = %p\n", va, tar->off, tar->bg);
+    //printf("read from va = %p\n", tar->off + (va - tar->bg));
+    readi(f->ip, 0, pa, tar->off + (va - tar->bg), PGSIZE);
+    //if (n != PGSIZE) {
+    //    printf(" read len = %d\n", n);
+    //    printf("Can't read all bytes\n");
+    //    return -1;
+    //}
+    iunlock(f->ip);
+
+
+    int pte_flag = PTE_U | PTE_V;
+    if (tar->prot & PROT_READ) {
+         pte_flag |= PTE_R;
+    }
+    if (tar->prot & PROT_WRITE) {
+        pte_flag |= PTE_W;
+    }
+
+
+    printf("map va = %p from handle_vma\n", va);
+    mappages(p->pagetable, va, PGSIZE, pa, pte_flag);
+
+    return 0;
 }

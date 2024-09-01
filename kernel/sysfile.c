@@ -15,6 +15,8 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "vma.h"
+
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -502,4 +504,192 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+
+struct vma vmas[NVMA];
+struct spinlock vma_lock;
+
+uint64
+sys_mmap(void)
+{
+    printf("enter mmap \n");
+    uint64 addr;
+    size_t length;
+    int prot, flags, pfd;
+    int offset;
+    struct file *f;
+    argaddr(0, &addr);
+    argaddr(1, &length);
+    argint(2, &prot);
+    argint(3, &flags);
+    if (argfd(4, &pfd, &f) < 0) {
+        return -1;
+    }
+    argint (5, &offset);
+
+    if (flags & MAP_SHARED) {
+        if (prot & PROT_READ) {
+            if (!f->readable) {
+                //printf("prot : readable\n");
+                return -1;
+            }
+        }
+        if (prot & PROT_WRITE) {
+            if (!f->writable) {
+                //printf("prot : writable\n");
+                return -1;
+            }
+        }
+    }
+
+    //check flags and prot
+    struct vma *vma = vmas;
+    //kalloc vma
+    //一把大锁，所有进程都争夺
+    acquire(&vma_lock);
+    for (vma = vmas; vma < vmas + NVMA; vma ++) {
+        if (vma->free) {
+            vma->free = 0;
+            break;
+        }
+    }
+    release(&vma_lock);
+
+    vma->next = 0;
+    vma->length = length;
+    vma->prot = prot;
+    vma->flags = flags;
+    vma->file = f;
+    vma->off = offset;
+    
+    //一把小锁，每个进程独占一把，对应每个进程的私有地址空间
+    acquire(&myproc()->pvma_lock);
+    struct vma *cur_vma = myproc()->vma_head;
+    if (!cur_vma) {
+        addr = MAP_BASE;
+        myproc()->vma_head = vma;
+    } else {
+        addr = addr > PGROUNDUP(cur_vma->bg + cur_vma->length) ? addr : PGROUNDUP(cur_vma->bg + cur_vma->length);
+        while (cur_vma->next) {
+
+            cur_vma = cur_vma->next;
+            addr = addr > PGROUNDUP(cur_vma->bg + cur_vma->length) ? addr : PGROUNDUP(cur_vma->bg + cur_vma->length);
+        }
+        cur_vma->next = vma;
+    }
+    vma->bg = addr;
+
+    filedup(f);
+
+    printf("map from %p to %p, length : %d.\n", vma->bg, vma->bg + vma->length, vma->length);
+    release(&myproc()->pvma_lock);
+
+
+    printf("exit mmap \n");
+    return addr;
+}
+
+
+uint64
+write_back(struct vma* v, uint64 addr, int n) {
+    //check wether should write back
+    if(!(v->prot & PROT_WRITE) || (v->flags & MAP_PRIVATE)) {
+        return 0;
+    }
+    if (!walkaddr(myproc()->pagetable, addr)) {
+        return 0;
+    }
+    printf("write back addr = %p, len = %d, v->off = %d.\n", addr, n, v->off);
+    struct file *f = v->file;
+    int max = ((MAXOPBLOCKS - 1 - 1 - 2) / 2) * BSIZE;
+    int i = 0; 
+    while (i < n) {
+        int n1 = n - i;
+        if (n1 > max) {
+            n1 = max;
+        }
+
+        begin_op();
+        ilock(f->ip);
+        int r = writei(f->ip, 1, addr + i, v->off + addr - v->bg + i, n1);
+        iunlock(f->ip);
+        end_op();
+        i += r;
+    }
+    return i;
+}
+
+
+uint64
+sys_munmap(void)
+{
+    uint64 addr;
+    size_t length;
+    argaddr(0, &addr);
+    argaddr(1, &length);
+    struct proc *p = myproc();
+    struct vma *cur = 0;
+    struct vma *prev = 0;
+
+    //find the target vma
+    acquire(&p->pvma_lock);
+    cur = p->vma_head;
+    while (cur != 0) {
+        if (cur->bg == addr) {
+            if (prev == 0) {
+                p->vma_head = cur->next;
+            } else {
+                prev->next = cur->next;
+            }
+            break;
+        }
+        prev = cur;
+        cur = cur->next;
+    }
+    if (cur == 0) {
+        release(&p->pvma_lock);
+        printf("munmap one addr hasn't been map\n");
+        return -1;
+    }
+    if (length > cur->length) {
+        printf("unmap too much mem.\n");
+        return -1;
+    }
+    release(&p->pvma_lock);
+    //write back
+    //filewrite 写回到file->off,我们需要写回到cur->off
+    //进入write_cur时，不能携带p->pvma_lock
+    write_back(cur, addr, length);
+
+    acquire(&p->pvma_lock);
+    //unmap page
+    for (uint64 va = addr; va < addr + length; va += PGSIZE) {
+        if (walkaddr(p->pagetable, va)) {
+        //if (pte != 0 && *pte & PTE_V) {
+            printf("free va = %p.\n", va);
+            uvmunmap(p->pagetable, va, 1, 1);
+        }
+    }
+
+    //ref -- 
+    cur->bg += length;
+    cur->length -= length;
+    cur->off += length;
+    if (cur->length) {
+        cur->next = p->vma_head;
+        p->vma_head = cur;
+    }
+    release(&p->pvma_lock);
+
+    if (!cur->length) {
+        fileclose(cur->file);
+    }
+
+    acquire(&vma_lock);
+    if (!cur->length) {
+        cur->free = 1;
+    }
+    release(&vma_lock);
+
+    return 0;
 }
